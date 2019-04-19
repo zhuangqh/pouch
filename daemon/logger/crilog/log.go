@@ -3,6 +3,7 @@ package crilog
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -64,7 +65,11 @@ func (l *Log) Close() error {
 func New(path string, withTerminal bool) (*Log, error) {
 	// TODO(fuweid): need to serialize writer since both the stdout and
 	// stderr share the same writer.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+	filepath, err := os.Readlink(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve the path link: %v", err)
+	}
+	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
 	if err != nil {
 		return nil, err
 	}

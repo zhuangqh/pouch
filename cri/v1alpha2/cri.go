@@ -674,15 +674,13 @@ func (c *CriManager) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	sandboxMeta.NetNS = containerNetns(sandbox)
 
 	labels := makeLabels(config.GetLabels(), config.GetAnnotations())
-	// Apply the container type lable.
+	// Apply the container type label.
 	labels[containerTypeLabelKey] = containerTypeLabelContainer
 	// Write the sandbox ID in the labels.
 	labels[sandboxIDLabelKey] = podSandboxID
-	// Get container log.
-	var logPath string
+	// Set container log.
 	if config.GetLogPath() != "" {
-		logPath = filepath.Join(sandboxConfig.GetLogDirectory(), config.GetLogPath())
-		labels[containerLogPathLabelKey] = logPath
+		labels[containerLogPathLabelKey] = filepath.Join(sandboxConfig.GetLogDirectory(), config.GetLogPath())
 	}
 
 	image := ""
@@ -768,12 +766,6 @@ func (c *CriManager) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		}
 	}()
 
-	if logPath != "" {
-		if err := c.ContainerMgr.AttachCRILog(ctx, containerID, logPath); err != nil {
-			return nil, err
-		}
-	}
-
 	metrics.ContainerSuccessActionsCounter.WithLabelValues(label).Inc()
 
 	return &runtime.CreateContainerResponse{ContainerId: containerID}, nil
@@ -792,6 +784,19 @@ func (c *CriManager) StartContainer(ctx context.Context, r *runtime.StartContain
 	err := c.ContainerMgr.Start(ctx, containerID, &apitypes.ContainerStartOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start container %q: %v", containerID, err)
+	}
+
+	container, err := c.ContainerMgr.Get(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container %q: %v", containerID, err)
+	}
+
+	// get logPath of container
+	logPath := container.Config.Labels[containerLogPathLabelKey]
+	if logPath != "" {
+		if err := c.ContainerMgr.AttachCRILog(ctx, container.ID, logPath); err != nil {
+			return nil, fmt.Errorf("failed to attach CRI log for container %q: %v", containerID, err)
+		}
 	}
 
 	metrics.ContainerSuccessActionsCounter.WithLabelValues(label).Inc()
@@ -1097,7 +1102,7 @@ func (c *CriManager) ReopenContainerLog(ctx context.Context, r *runtime.ReopenCo
 
 	container, err := c.ContainerMgr.Get(ctx, containerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get container %q with error: %v", containerID, err)
+		return nil, fmt.Errorf("failed to get container %q: %v", containerID, err)
 	}
 	if !container.IsRunning() {
 		return nil, errors.Wrap(errtypes.ErrPreCheckFailed, "container is not running")
@@ -1110,7 +1115,7 @@ func (c *CriManager) ReopenContainerLog(ctx context.Context, r *runtime.ReopenCo
 		return &runtime.ReopenContainerLogResponse{}, nil
 	}
 
-	if err := c.ContainerMgr.AttachCRILog(ctx, container.Name, logPath); err != nil {
+	if err := c.ContainerMgr.AttachCRILog(ctx, container.ID, logPath); err != nil {
 		return nil, err
 	}
 

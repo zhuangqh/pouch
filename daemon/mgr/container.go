@@ -1046,13 +1046,31 @@ func (mgr *ContainerManager) AttachContainerIO(ctx context.Context, name string,
 }
 
 // AttachCRILog adds cri log to a container.
-func (mgr *ContainerManager) AttachCRILog(ctx context.Context, name string, logPath string) error {
+func (mgr *ContainerManager) AttachCRILog(ctx context.Context, id string, logPath string) error {
 	if logPath == "" {
 		return errors.Wrap(errtypes.ErrInvalidParam, "logPath cannot be empty")
 	}
-	c, err := mgr.container(name)
+	c, err := mgr.container(id)
 	if err != nil {
 		return err
+	}
+
+	containerLog := path.Join(mgr.Store.Path(id), "json.log")
+
+	_, err = os.Stat(containerLog)
+	if os.IsNotExist(err) {
+		return errors.Wrapf(err, "container log %s not found", containerLog)
+	}
+
+	// There are three level logs
+	// 1. /var/log/containers/{pod.name}_{pod.namespace}_{containerName}-{containerId}.log
+	// 2. /var/log/pods/{pod.UID}/{containerName}/{restartCount}.log
+	// 3. {Pouch Home dir}/containers/{containerID}/json.log
+	// kubelet will link the level1 and the level2 logs.
+	// We link the level2 and the level3 logs here.
+	// All of the logs above would write to exactly one file.
+	if err := os.Symlink(containerLog, logPath); err != nil {
+		logrus.Warnf("failed to create symbolic link %s to container %s", logPath, id)
 	}
 
 	return mgr.attachCRILog(c, logPath)
